@@ -6285,7 +6285,28 @@ vte_terminal_cellattr_equal(const VteCellAttr *attr1, const VteCellAttr *attr2) 
 }
 
 /*
- * Similar to vte_screenl_find_charcell, but takes a VteCharAttribute for
+ * Converts a VteCellAttr to a CSS style string.
+ */
+static gboolean
+vte_terminal_cellattr_to_css(const VteCellAttr *attr) {
+	GString *string;
+
+	string = g_string_new(NULL);
+
+	if (attr->bold)          g_string_append(string, "font-weight:bold;");
+	/* fore, back, standout */
+	if (attr->underline)     g_string_append(string, "text-decoration:underline");
+	if (attr->strikethrough) g_string_append(string, "text-decoration:line-through");
+	/* reverse */
+	if (attr->blink)         g_string_append(string, "text-decoration:blink");
+	/* half */
+	if (attr->invisible)     g_string_append(string, "visibility:hidden");
+
+	return g_string_free(string, FALSE);
+}
+
+/*
+ * Similar to vte_screen_find_charcell, but takes a VteCharAttribute for
  * indexing and returns the VteCellAttr.
  */
 static const VteCellAttr *
@@ -6318,7 +6339,7 @@ vte_view_attributes_to_html(VteView *terminal, const gchar *text, GArray *attrs)
 	GString *string;
 	guint from,to;
 	const VteCellAttr *attr;
-	char *escaped;
+	char *escaped, *style;
 
 	g_assert(strlen(text) == attrs->len);
 
@@ -6348,9 +6369,17 @@ vte_view_attributes_to_html(VteView *terminal, const gchar *text, GArray *attrs)
 				to++;
 			}
 			escaped = g_markup_escape_text(text + from, to - from);
-			g_string_append(string, "<span>");
-			g_string_append(string, escaped);
-			g_string_append(string, "</span>");
+			style = vte_terminal_cellattr_to_css(attr);
+			if (style[0] != '\0') {
+				g_string_append_printf(string,
+					"<span style=\"%s\">%s</span>", 
+					style,
+					escaped
+					);
+			} else {
+				g_string_append(string, escaped);
+			}
+			g_free(style);
 			g_free(escaped);
 			from = to;
 		}
