@@ -117,6 +117,14 @@ struct _vte_regex_match {
        int rm_eo;
 };
 
+/* Used in the GtkClipboard API, to distinguish requests for HTML and TEXT
+ * contents of a clipboard */
+typedef enum {
+	VTE_TARGET_TEXT,
+	VTE_TARGET_HTML,
+	LAST_VTE_TARGET
+} VteSelectionTarget;
+
 /* A match regex, with a tag. */
 struct vte_match_regex {
 	gint tag;

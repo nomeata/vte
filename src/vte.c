@@ -5916,7 +5916,27 @@ vte_view_copy_primary_cb(GtkClipboard *clipboard, GtkSelectionData *data,
 					terminal->pvt->selection[i]);
 			}
 		}
-		gtk_selection_data_set_text(data, terminal->pvt->selection, -1);
+		if (info == VTE_TARGET_TEXT) {
+			gtk_selection_data_set_text(data, terminal->pvt->selection, -1);
+		} else {
+			gsize len;
+			gchar *selection, *text;
+
+			g_assert(info == VTE_TARGET_HTML);
+
+			text = g_markup_printf_escaped("<pre>%s</pre>",
+				terminal->pvt->selection);
+			/* Mozilla asks that we start our text/html with the Unicode byte order mark */
+			/* (Comment found in gtkimhtml.c of pidgin fame) */
+			selection = g_convert(text, -1, "UTF-16", "UTF-8", NULL, &len, NULL);
+			g_free(text);
+			gtk_selection_data_set(data,
+				gdk_atom_intern("text/html", FALSE),
+				16,
+				(const guchar *)selection,
+				len);
+			g_free(selection);
+		}
 	}
 }
 
@@ -5944,7 +5964,27 @@ vte_view_copy_clipboard_cb(GtkClipboard *clipboard, GtkSelectionData *data,
 			g_printerr("Setting selection (%"G_GSIZE_FORMAT" UTF-8 bytes.)\n",
 				strlen(terminal->pvt->selection_clipboard));
 		}
-		gtk_selection_data_set_text(data, terminal->pvt->selection_clipboard, -1);
+		if (info == VTE_TARGET_TEXT) {
+			gtk_selection_data_set_text(data, terminal->pvt->selection_clipboard, -1);
+		} else {
+			gsize len;
+			gchar *selection, *text;
+
+			g_assert(info == VTE_TARGET_HTML);
+
+			text = g_markup_printf_escaped("<pre>%s</pre>",
+				terminal->pvt->selection_clipboard);
+			/* Mozilla asks that we start our text/html with the Unicode byte order mark */
+			/* (Comment found in gtkimhtml.c of pidgin fame) */
+			selection = g_convert(text, -1, "UTF-16", "UTF-8", NULL, &len, NULL);
+			g_free(text);
+			gtk_selection_data_set(data,
+				gdk_atom_intern("text/html", FALSE),
+				16,
+				(const guchar *)selection,
+				len);
+			g_free(selection);
+		}
 	}
 }
 
@@ -6273,6 +6313,10 @@ vte_view_ensure_targets(VteView *terminal) {
 
 		list = gtk_target_list_new (NULL, 0);
 		gtk_target_list_add_text_targets (list, 0);
+		gtk_target_list_add (list,
+			gdk_atom_intern("text/html", FALSE),
+			0,
+			VTE_TARGET_HTML);
 		targets = gtk_target_table_new_from_list (list, &n_targets);
 		gtk_target_list_unref (list);
 	}
