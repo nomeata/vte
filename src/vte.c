@@ -5920,16 +5920,14 @@ vte_view_copy_primary_cb(GtkClipboard *clipboard, GtkSelectionData *data,
 			gtk_selection_data_set_text(data, terminal->pvt->selection, -1);
 		} else {
 			gsize len;
-			gchar *selection, *text;
+			gchar *selection;
 
 			g_assert(info == VTE_TARGET_HTML);
 
-			text = g_markup_printf_escaped("<pre>%s</pre>",
-				terminal->pvt->selection);
 			/* Mozilla asks that we start our text/html with the Unicode byte order mark */
 			/* (Comment found in gtkimhtml.c of pidgin fame) */
-			selection = g_convert(text, -1, "UTF-16", "UTF-8", NULL, &len, NULL);
-			g_free(text);
+			selection = g_convert(terminal->pvt->selection_html,
+					-1, "UTF-16", "UTF-8", NULL, &len, NULL);
 			gtk_selection_data_set(data,
 				gdk_atom_intern("text/html", FALSE),
 				16,
@@ -5976,7 +5974,8 @@ vte_view_copy_clipboard_cb(GtkClipboard *clipboard, GtkSelectionData *data,
 				terminal->pvt->selection_clipboard);
 			/* Mozilla asks that we start our text/html with the Unicode byte order mark */
 			/* (Comment found in gtkimhtml.c of pidgin fame) */
-			selection = g_convert(text, -1, "UTF-16", "UTF-8", NULL, &len, NULL);
+			selection = g_convert(terminal->pvt->selection_clipboard_html,
+					-1, "UTF-16", "UTF-8", NULL, &len, NULL);
 			g_free(text);
 			gtk_selection_data_set(data,
 				gdk_atom_intern("text/html", FALSE),
@@ -6267,6 +6266,23 @@ vte_buffer_get_text_include_trailing_spaces(VteBuffer *buffer,
 }
 
 /**
+ * vte_terminal_attributes_to_html:
+ * @terminal: a #VteView
+ * @text: A string as returned by the vte_terminal_get_* family of functions.
+ * @attributes: (array) (element-type Vte.CharAttributes): text attributes, as created by vte_terminal_get_*
+ *
+ * Marks the given text up according to the given attributes, using HTML <span>
+ * commands, and wraps the string in a <pre> element.
+ *
+ * Returns: (transfer full): a newly allocated text string, or %NULL.
+ */
+char *
+vte_view_attributes_to_html(VteView *terminal, const gchar *text, GArray *attributes) {
+	g_assert(strlen(text) == attributes->len);
+	return g_markup_printf_escaped("<pre>%s</pre>", text);
+}
+
+/**
  * vte_buffer_get_cursor_position:
  * @buffer: a #VteBuffer
  * @column: (out) (allow-none): a location to store the column, or %NULL
@@ -6344,6 +6360,7 @@ vte_view_real_copy_clipboard(VteView *terminal)
 	 */
 	g_free(terminal->pvt->selection_clipboard);
 	terminal->pvt->selection_clipboard = _vte_view_get_selection(terminal);
+	terminal->pvt->selection_clipboard_html = g_strdup(terminal->pvt->selection_html);
 
 	/* Place the text on the clipboard. */
 	if (terminal->pvt->selection_clipboard != NULL) {
@@ -6371,6 +6388,7 @@ vte_view_real_copy_primary(VteView *terminal)
 {
         VteBuffer *buffer;
 	GtkClipboard *clipboard;
+	GArray *attributes;
 
         _vte_debug_print(VTE_DEBUG_SELECTION, "Copying to PRIMARY.\n");
 	clipboard = gtk_widget_get_clipboard(&terminal->widget, GDK_SELECTION_PRIMARY);
@@ -6382,6 +6400,8 @@ vte_view_real_copy_primary(VteView *terminal)
         if (buffer == NULL)
                 return;
 
+	attributes = g_array_new(FALSE, TRUE, sizeof(struct _VteCharAttributes));
+
 	/* Chuck old selected text and retrieve the newly-selected text. */
 	g_free(terminal->pvt->selection);
 	terminal->pvt->selection =
@@ -6392,7 +6412,13 @@ vte_view_real_copy_primary(VteView *terminal)
 					    buffer->pvt->column_count,
 					    (VteSelectionFunc)vte_view_cell_is_selected,
 					    terminal /* user data */,
-					    NULL);
+					    attributes);
+	g_free(terminal->pvt->selection_html);
+	terminal->pvt->selection_html =
+		vte_view_attributes_to_html(terminal,
+					     terminal->pvt->selection,
+					     attributes);
+
 	terminal->pvt->has_selection = TRUE;
 
 	/* Place the text on the clipboard. */
@@ -8606,6 +8632,7 @@ vte_view_finalize(GObject *object)
 					       terminal->pvt->selection,
 					       -1);
 		}
+		g_free(terminal->pvt->selection_html);
 		g_free(terminal->pvt->selection);
 	}
 	if (terminal->pvt->word_chars != NULL) {
@@ -12311,7 +12338,9 @@ vte_buffer_reset(VteBuffer *buffer,
         terminal->pvt->selecting_had_delta = FALSE;
         if (terminal->pvt->selection != NULL) {
 		g_free(terminal->pvt->selection);
+		g_free(terminal->pvt->selection_html);
                 terminal->pvt->selection = NULL;
+                terminal->pvt->selection_html = NULL;
                 memset(&terminal->pvt->selection_origin, 0,
                        sizeof(&terminal->pvt->selection_origin));
                 memset(&terminal->pvt->selection_last, 0,
@@ -12323,7 +12352,9 @@ vte_buffer_reset(VteBuffer *buffer,
 	}
         if (terminal->pvt->selection_clipboard != NULL) {
 		g_free(terminal->pvt->selection_clipboard);
+		g_free(terminal->pvt->selection_clipboard_html);
                 terminal->pvt->selection_clipboard = NULL;
+                terminal->pvt->selection_clipboard_html = NULL;
 	}
 	/* Reset mouse motion events. */
         terminal->pvt->mouse_tracking_mode = MOUSE_TRACKING_NONE;

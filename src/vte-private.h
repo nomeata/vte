@@ -344,7 +344,9 @@ struct _VteViewPrivate {
         gboolean selecting_had_delta;
         gboolean selection_block_mode;
         char *selection;
+        char *selection_html;
         char *selection_clipboard;
+        char *selection_clipboard_html;
         enum vte_selection_type {
                 selection_type_char,
                 selection_type_word,
