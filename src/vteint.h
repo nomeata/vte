@@ -26,6 +26,7 @@ G_BEGIN_DECLS
 
 void _vte_view_accessible_ref(VteView *terminal);
 char* _vte_view_get_selection(VteView *terminal);
+char* _vte_view_get_selection_html(VteView *terminal);
 void _vte_view_get_start_selection(VteView *terminal, long *x, long *y);
 void _vte_view_get_end_selection(VteView *terminal, long *x, long *y);
 void _vte_view_select_text(VteView *terminal, long start_x, long start_y, long end_x, long end_y, int start_offset, int end_offset);

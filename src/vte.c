@@ -6500,7 +6500,7 @@ vte_view_real_copy_clipboard(VteView *terminal)
 	 */
 	g_free(terminal->pvt->selection_clipboard);
 	terminal->pvt->selection_clipboard = _vte_view_get_selection(terminal);
-	terminal->pvt->selection_clipboard_html = g_strdup(terminal->pvt->selection_html);
+	terminal->pvt->selection_clipboard_html = _vte_view_get_selection_html(terminal);
 
 	/* Place the text on the clipboard. */
 	if (terminal->pvt->selection_clipboard != NULL) {
@@ -12750,6 +12750,14 @@ _vte_view_get_selection(VteView *terminal)
 	g_return_val_if_fail(VTE_IS_VIEW(terminal), NULL);
 
 	return g_strdup (terminal->pvt->selection);
+}
+
+char *
+_vte_view_get_selection_html(VteView *terminal)
+{
+	g_return_val_if_fail(VTE_IS_VIEW(terminal), NULL);
+
+	return g_strdup (terminal->pvt->selection_html);
 }
 
 void
