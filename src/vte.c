@@ -6276,6 +6276,8 @@ vte_buffer_get_text_include_trailing_spaces(VteBuffer *buffer,
  */
 static gboolean
 vte_terminal_cellattr_equal(const VteCellAttr *attr1, const VteCellAttr *attr2) {
+	g_assert(attr1);
+	g_assert(attr2);
 	return (attr1->bold          == attr2->bold      &&
 	        attr1->fore          == attr2->fore      &&
 	        attr1->back          == attr2->back      &&
@@ -6309,23 +6311,24 @@ vte_view_cellattr_to_html(VteView *terminal, const VteCellAttr *attr, const gcha
 		g_string_append(string, "</b>");
 	}
 	if (attr->fore != VTE_DEF_FG || attr->reverse) {
-		PangoColor *color = &terminal->pvt->palette[fore];
+		GdkRGBA *color = &terminal->pvt->palette[fore];
+		// This code is taken from gdk_rgba_to_string
 		gchar *tag = g_strdup_printf(
 			"<font color=\"#%02X%02X%02X\">",
-			color->red >> 8,
-			color->green >> 8,
-			color->blue >> 8);
+			(int)(0.5 + CLAMP (color->red, 0., 1.) * 255.),
+			(int)(0.5 + CLAMP (color->green, 0., 1.) * 255.),
+			(int)(0.5 + CLAMP (color->blue, 0., 1.) * 255.));
 		g_string_prepend(string, tag);
 		g_free(tag);
 		g_string_append(string, "</font>");
 	}
 	if (attr->back != VTE_DEF_BG || attr->reverse) {
-		PangoColor *color = &terminal->pvt->palette[back];
+		GdkRGBA *color = &terminal->pvt->palette[back];
 		gchar *tag = g_strdup_printf(
 			"<span style=\"background-color:#%02X%02X%02X\">",
-			color->red >> 8,
-			color->green >> 8,
-			color->blue >> 8);
+			(int)(0.5 + CLAMP (color->red, 0., 1.) * 255.),
+			(int)(0.5 + CLAMP (color->green, 0., 1.) * 255.),
+			(int)(0.5 + CLAMP (color->blue, 0., 1.) * 255.));
 		g_string_prepend(string, tag);
 		g_free(tag);
 		g_string_append(string, "</span>");
