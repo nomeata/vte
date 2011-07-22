@@ -5926,9 +5926,9 @@ vte_view_clear_clipboard_cb(GtkClipboard *clipboard, gpointer owner)
 {
 	VteView *terminal;
 	terminal = owner;
-	if (terminal->pvt->has_selection) {
-		_vte_debug_print(VTE_DEBUG_SELECTION, "Lost selection.\n");
-		vte_view_deselect_all(terminal);
+	if (terminal->pvt->selection_clipboard != NULL) {
+		g_free(terminal->pvt->selection_clipboard);
+		terminal->pvt->selection_clipboard = NULL;
 	}
 }
 
@@ -5939,16 +5939,12 @@ vte_view_copy_clipboard_cb(GtkClipboard *clipboard, GtkSelectionData *data,
 {
 	VteView *terminal;
 	terminal = owner;
-	if (terminal->pvt->selection != NULL) {
+	if (terminal->pvt->selection_clipboard != NULL) {
 		_VTE_DEBUG_IF(VTE_DEBUG_SELECTION) {
 			g_printerr("Setting selection (%"G_GSIZE_FORMAT" UTF-8 bytes.)\n",
-				strlen(terminal->pvt->selection));
-			for (i = 0; terminal->pvt->selection[i] != '\0'; i++) {
-				g_printerr("0x%04x\n",
-					terminal->pvt->selection[i]);
-			}
+				strlen(terminal->pvt->selection_clipboard));
 		}
-		gtk_selection_data_set_text(data, terminal->pvt->selection, -1);
+		gtk_selection_data_set_text(data, terminal->pvt->selection_clipboard, -1);
 	}
 }
 
@@ -6291,7 +6287,6 @@ vte_view_ensure_targets(VteView *terminal) {
 static void
 vte_view_real_copy_clipboard(VteView *terminal)
 {
-        VteBuffer *buffer;
 	GtkClipboard *clipboard;
 
         _vte_debug_print(VTE_DEBUG_SELECTION, "Copying to CLIPBOARD.\n");
@@ -6300,25 +6295,14 @@ vte_view_real_copy_clipboard(VteView *terminal)
         g_return_if_fail(VTE_IS_VIEW(terminal));
         g_return_if_fail(GTK_IS_CLIPBOARD(clipboard));
 
-        buffer = terminal->pvt->buffer;
-        if (buffer == NULL)
-                return;
-
-	/* Chuck old selected text and retrieve the newly-selected text. */
-	g_free(terminal->pvt->selection);
-	terminal->pvt->selection =
-		vte_buffer_get_text_range(terminal->pvt->buffer,
-					    terminal->pvt->selection_start.row,
-					    0,
-					    terminal->pvt->selection_end.row,
-					    buffer->pvt->column_count,
-					    (VteSelectionFunc)vte_view_cell_is_selected,
-					    terminal /* user data */,
-					    NULL);
-	terminal->pvt->has_selection = TRUE;
+        /* Chuck old selected text and retrieve the newly-selected text.
+	 * We can always take the data that the PRIMARY selection already holds
+	 */
+	g_free(terminal->pvt->selection_clipboard);
+	terminal->pvt->selection_clipboard = _vte_view_get_selection(terminal);
 
 	/* Place the text on the clipboard. */
-	if (terminal->pvt->selection != NULL) {
+	if (terminal->pvt->selection_clipboard != NULL) {
 		_vte_debug_print(VTE_DEBUG_SELECTION,
 				"Assuming ownership of selection.\n");
 		vte_view_ensure_targets(terminal);
@@ -12292,6 +12276,10 @@ vte_buffer_reset(VteBuffer *buffer,
                        sizeof(&terminal->pvt->selection_start));
                 memset(&terminal->pvt->selection_end, 0,
                        sizeof(&terminal->pvt->selection_end));
+	}
+        if (terminal->pvt->selection_clipboard != NULL) {
+		g_free(terminal->pvt->selection_clipboard);
+                terminal->pvt->selection_clipboard = NULL;
 	}
 	/* Reset mouse motion events. */
         terminal->pvt->mouse_tracking_mode = MOUSE_TRACKING_NONE;
