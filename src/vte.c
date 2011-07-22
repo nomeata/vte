@@ -194,6 +194,9 @@ enum {
 
 static guint buffer_signals[LAST_BUFFER_SIGNAL];
 
+static GtkTargetEntry *targets = NULL;
+static gint n_targets = 0;
+
 /* these static variables are guarded by the GDK mutex */
 static guint process_timeout_tag = 0;
 static gboolean in_process_timeout;
@@ -6249,6 +6252,24 @@ vte_view_copy(VteView *terminal)
 }
 
 /**
+ * vte_view_ensure_targets
+ * @terminal:
+ *
+ * Ensures that the list of targets is initialized
+ */
+static void
+vte_view_ensure_targets(VteView *terminal) {
+	if (!targets) {
+		GtkTargetList *list;
+
+		list = gtk_target_list_new (NULL, 0);
+		gtk_target_list_add_text_targets (list, 0);
+		targets = gtk_target_table_new_from_list (list, &n_targets);
+		gtk_target_list_unref (list);
+	}
+}
+
+/**
  * vte_view_copy_clipboard:
  * @terminal: a #VteView
  * @clipboard: a #GtkClipboard
@@ -6259,8 +6280,6 @@ static void
 vte_view_copy_clipboard(VteView *terminal,
                             GtkClipboard *clipboard)
 {
-        static GtkTargetEntry *targets = NULL;
-        static gint n_targets = 0;
         VteBuffer *buffer;
 
         g_return_if_fail(VTE_IS_VIEW(terminal));
@@ -6287,15 +6306,7 @@ vte_view_copy_clipboard(VteView *terminal,
 	if (terminal->pvt->selection != NULL) {
 		_vte_debug_print(VTE_DEBUG_SELECTION,
 				"Assuming ownership of selection.\n");
-		if (!targets) {
-			GtkTargetList *list;
-
-			list = gtk_target_list_new (NULL, 0);
-			gtk_target_list_add_text_targets (list, 0);
-                        targets = gtk_target_table_new_from_list (list, &n_targets);
-			gtk_target_list_unref (list);
-		}
-
+		vte_view_ensure_targets(terminal);
 		gtk_clipboard_set_with_owner(clipboard,
 					     targets,
 					     n_targets,
