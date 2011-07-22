@@ -6394,7 +6394,8 @@ vte_view_attributes_to_html(VteView *terminal, const gchar *text, GArray *attrs)
 	
 	g_string_append(string, "<pre>");
 	/* Find streches with equal attributes. Newlines are treated specially,
-	 * so that the <span> do not cover multiple lines.
+	 * so that the <span> do not cover multiple lines, and because they do
+	 * not have a VteCellAttr associated in attrs.
 	 */
 	from = to = 0;
 	while (text[from] != '\0') {
