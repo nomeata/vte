@@ -142,12 +142,16 @@ button_pressed(GtkWidget *widget, GdkEvent *event, gpointer data)
 	case 3:
 		terminal = VTE_VIEW(widget);
 
-                match = vte_view_match_check_event(terminal, event, &tag);
-		if (match != NULL) {
-			g_print("Matched `%s' (%d).\n", match, tag);
-			g_free(match);
-			if (GPOINTER_TO_INT(data) != 0) {
-				vte_view_match_remove(terminal, tag);
+		if (event->button.state & GDK_CONTROL_MASK) {
+			vte_view_copy(terminal);	
+		} else {
+			match = vte_view_match_check_event(terminal, event, &tag);
+			if (match != NULL) {
+				g_print("Matched `%s' (%d).\n", match, tag);
+				g_free(match);
+				if (GPOINTER_TO_INT(data) != 0) {
+					vte_view_match_remove(terminal, tag);
+				}
 			}
 		}
 		break;

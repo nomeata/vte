@@ -100,8 +100,8 @@ VteBuffer *vte_view_get_buffer(VteView *terminal);
 
 /* Copy currently-selected text to the clipboard, or from the clipboard to
  * the terminal. */
-void vte_view_copy_clipboard(VteView *terminal, GtkClipboard *clipboard);
-void vte_view_paste_clipboard(VteView *terminal, GtkClipboard *clipboard);
+void vte_view_copy(VteView *terminal);
+void vte_view_paste(VteView *terminal);
 
 void vte_view_select_all(VteView *terminal);
 void vte_view_unselect_all(VteView *terminal);

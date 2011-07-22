@@ -73,6 +73,8 @@ static void vte_view_emit_copy_clipboard(VteView *terminal);
 static void vte_view_emit_paste_clipboard(VteView *terminal);
 static void vte_view_emit_copy_primary(VteView *terminal);
 static void vte_view_emit_paste_primary(VteView *terminal);
+static void vte_view_copy_clipboard(VteView *terminal, GtkClipboard *clipboard);
+static void vte_view_paste_clipboard(VteView *terminal, GtkClipboard *clipboard);
 static void vte_view_set_visibility (VteView *terminal, GdkVisibilityState state);
 static void vte_buffer_set_termcap(VteBuffer *buffer, const char *path,
 				     gboolean reset);
@@ -6235,13 +6237,25 @@ vte_buffer_get_cursor_position(VteBuffer *buffer,
 }
 
 /**
+ * vte_view_copy
+ * @terminal: a #VteView
+ *
+ * Copies the selected text in @terminal to the CLIPBOARD selection.
+ */
+void
+vte_view_copy(VteView *terminal)
+{
+	vte_view_emit_copy_clipboard(terminal);
+}
+
+/**
  * vte_view_copy_clipboard:
  * @terminal: a #VteView
  * @clipboard: a #GtkClipboard
  *
  * Copies the selected text in @terminal to @clipboard.
  */
-void
+static void
 vte_view_copy_clipboard(VteView *terminal,
                             GtkClipboard *clipboard)
 {
@@ -11661,6 +11675,20 @@ vte_view_set_scroll_on_keystroke(VteView *terminal, gboolean scroll)
 }
 
 /**
+ * vte_view_paste:
+ * @terminal: a #VteView
+ *
+ * Sends the contents of the CLIPBOARD selection to the terminal's child.
+ * If necessary, the data is converted from UTF-8 to the terminal's current
+ * encoding.
+ */
+void
+vte_view_paste(VteView *terminal)
+{
+	vte_view_emit_paste_clipboard(terminal);
+}
+
+/**
  * vte_view_paste_clipboard:
  * @terminal: a #VteView
  * @clipboard: a #GtkClipboard
@@ -11669,7 +11697,7 @@ vte_view_set_scroll_on_keystroke(VteView *terminal, gboolean scroll)
  * If necessary, the data is converted from UTF-8 to the
  * terminal's current encoding.
  */
-void
+static void
 vte_view_paste_clipboard(VteView *terminal,
                              GtkClipboard *clipboard)
 {
