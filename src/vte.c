@@ -122,7 +122,11 @@ static void vte_view_set_font(VteView *terminal, PangoFontDescription *desc /* a
 static void vte_view_beep(VteView *terminal, VteBellType bell_type);
 static void vte_view_buffer_contents_changed(VteView *terminal);
 static void vte_buffer_process_incoming(VteBuffer *buffer);
-
+static void vte_view_determine_colors_internal(VteView *terminal,
+						   const VteCellAttr *attr,
+						   gboolean selected,
+						   gboolean cursor,
+						   guint *pfore, guint *pback)
 static gboolean process_timeout (gpointer data);
 static gboolean update_timeout (gpointer data);
 
@@ -6296,26 +6300,9 @@ vte_view_cellattr_to_html(VteView *terminal, const VteCellAttr *attr, const gcha
 
 	string = g_string_new(text);
 
-	/* This reimplements some of the logic of
-	 * vte_terminal_determine_colors_internal. If the latter worked on
-	 * VteCellAttr instead of VteCell, tihs could be used here.
-	 */
-	fore = attr->fore;
-	back = attr->back;
-	/* Handle bold by using set bold color or brightening */
-	if (attr->bold && fore < VTE_LEGACY_COLOR_SET_SIZE) {
-		fore += VTE_COLOR_BRIGHT_OFFSET;
-	}
-
-	/* Handle half similarly */
-	if (attr->half && fore < VTE_LEGACY_COLOR_SET_SIZE) {
-		fore = corresponding_dim_index[fore];
-	}
-
-	/* And standout */
-	if (attr->standout && back < VTE_LEGACY_COLOR_SET_SIZE) {
-		back += VTE_COLOR_BRIGHT_OFFSET;
-	}
+	vte_view_determine_colors_internal(terminal, attr,
+					   FALSE, FALSE,
+					   &fore, &back);
 
 	if (attr->bold || attr->standout) {
 		g_string_prepend(string, "<b>");
