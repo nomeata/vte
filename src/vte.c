@@ -8619,19 +8619,18 @@ swap (guint *a, guint *b)
 
 static void
 vte_view_determine_colors_internal(VteView *terminal,
-				       const VteCell *cell,
-				       gboolean selected,
-				       gboolean cursor,
-				       guint *pfore, guint *pback)
+				   const VteCellAttr *attr,
+				   gboolean selected,
+				   gboolean cursor,
+				   guint *pfore, guint *pback)
 {
 	guint fore, back;
 
-	if (!cell)
-		cell = &basic_cell.cell;
+	g_assert(attr);
 
 	/* Start with cell colors */
-	fore = cell->attr.fore;
-	back = cell->attr.back;
+	fore = attr->fore;
+	back = attr->back;
 
 	/* Reverse-mode switches default fore and back colors */
 	if (G_UNLIKELY (terminal->pvt->buffer->pvt->screen->reverse_mode ^ terminal->pvt->reverse)) {
@@ -8642,7 +8641,7 @@ vte_view_determine_colors_internal(VteView *terminal,
 	}
 
 	/* Handle bold by using set bold color or brightening */
-	if (cell->attr.bold) {
+	if (attr->bold) {
 		if (fore == VTE_DEF_FG)
 			fore = VTE_BOLD_FG;
 		else if (fore < VTE_LEGACY_COLOR_SET_SIZE) {
@@ -8651,7 +8650,7 @@ vte_view_determine_colors_internal(VteView *terminal,
 	}
 
 	/* Handle half similarly */
-	if (cell->attr.half) {
+	if (attr->half) {
 		if (fore == VTE_DEF_FG)
 			fore = VTE_DIM_FG;
 		else if ((fore < VTE_LEGACY_COLOR_SET_SIZE))
@@ -8659,17 +8658,18 @@ vte_view_determine_colors_internal(VteView *terminal,
 	}
 
 	/* And standout */
-	if (cell->attr.standout) {
+	if (attr->standout) {
 		if (back < VTE_LEGACY_COLOR_SET_SIZE)
 			back += VTE_COLOR_BRIGHT_OFFSET;
 	}
 
 	/* Reverse cell? */
-	if (cell->attr.reverse) {
+	if (attr->reverse) {
                 if (terminal->pvt->reverse_color_set)
                         back = VTE_REV_BG;
                 else
                         swap (&fore, &back);
+		swap (&fore, &back);
 	}
 
 	/* Selection: use hightlight back, or inverse */
@@ -8691,7 +8691,7 @@ vte_view_determine_colors_internal(VteView *terminal,
 	}
 
 	/* Invisible? */
-	if (cell && cell->attr.invisible) {
+	if (attr->invisible) {
 		fore = back;
 	}
 
@@ -8705,9 +8705,10 @@ vte_view_determine_colors (VteView *terminal,
 			       gboolean highlight,
 			       guint *fore, guint *back)
 {
-	return vte_view_determine_colors_internal (terminal, cell,
-						       highlight, FALSE,
-						       fore, back);
+	return vte_view_determine_colors_internal (terminal,
+					           cell ? &cell->attr : &basic_cell.cell.attr,
+						   highlight, FALSE,
+						   fore, back);
 }
 
 static inline void
@@ -8716,9 +8717,10 @@ vte_view_determine_cursor_colors (VteView *terminal,
 				      gboolean highlight,
 				      guint *fore, guint *back)
 {
-	return vte_view_determine_colors_internal (terminal, cell,
-						       highlight, TRUE,
-						       fore, back);
+	return vte_view_determine_colors_internal (terminal,
+	       					   cell ? &cell->attr : &basic_cell.cell.attr,
+						   highlight, TRUE,
+						   fore, back);
 }
 
 /* Check if a unicode character is actually a graphic character we draw
