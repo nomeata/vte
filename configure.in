@@ -12,7 +12,7 @@ AC_INIT([vte],
 AC_CONFIG_SRCDIR([src/vte.c])
 AC_CONFIG_HEADERS([config.h])
 
-AM_INIT_AUTOMAKE([1.9 foreign no-dist-gzip dist-bzip2])
+AM_INIT_AUTOMAKE([1.9 foreign no-dist-gzip dist-bzip2 -Wno-portability])
 
 m4_ifdef([AM_SILENT_RULES],[AM_SILENT_RULES([yes])])
 
@@ -203,26 +203,27 @@ case $host in
 	;;
 esac
 
-GLIB_REQUIRED=2.26.0
+GLIB_REQUIRED=2.32.0
+GIO_REQUIRED=2.32.0
 PANGO_REQUIRED=1.22.0
-AC_DEFINE(GDK_MULTIHEAD_SAFE,1,[Force use of GDK's multihead-safe APIs.])
-PKG_CHECK_MODULES(GLIB,[glib-2.0 >= $GLIB_REQUIRED gobject-2.0])
-PKG_CHECK_MODULES(GTK,[glib-2.0 >= $GLIB_REQUIRED gobject-2.0 gtk+-$GTK_API_VERSION >= $GTK_REQUIRED])
+AC_DEFINE(GDK_MULTIHEAD_SAFE,1,[Force use of GDKs multihead-safe APIs.])
+PKG_CHECK_MODULES(GLIB,[glib-2.0 >= $GLIB_REQUIRED gobject-2.0 gio-2.0 >= $GIO_REQUIRED])
+PKG_CHECK_MODULES(GTK,[glib-2.0 >= $GLIB_REQUIRED gobject-2.0 gio-2.0 >= $GIO_REQUIRED gtk+-$GTK_API_VERSION >= $GTK_REQUIRED])
 
 AC_PATH_PROG([GLIB_GENMARSHAL],[glib-genmarshal])
 AC_PATH_PROG([GLIB_MKENUMS],[glib-mkenums])
 
-# Let the user specify the default terminal emulation.
-AC_ARG_WITH(default-emulation,
-AS_HELP_STRING(--with-default-emulation=xterm,default terminal type to be emulated),
-emulation=$withval,emulation=xterm)
-AC_DEFINE_UNQUOTED(VTE_DEFAULT_EMULATION,"$emulation",[The default terminal type to be emulated.])
-VTE_DEFAULT_EMULATION=$emulation
-AC_SUBST(VTE_DEFAULT_EMULATION)
-AM_CONDITIONAL(VTE_DEFAULT_EMULATION, [test "$emulation" != xterm])
+AC_ARG_VAR([GLIB_COMPILE_RESOURCES],[the glib-compile-resources programme])
+AC_PATH_PROG([GLIB_COMPILE_RESOURCES],[glib-compile-resources],[])
+if test -z "$GLIB_COMPILE_RESOURCES"; then
+  AC_MSG_ERROR([glib-compile-resources not found])
+fi
+
+VTE_DEFAULT_EMULATION=xterm
+AC_DEFINE_UNQUOTED(VTE_DEFAULT_EMULATION,"$VTE_DEFAULT_EMULATION",[The default terminal type to be emulated.])
 
 # Check for headers.
-AC_CHECK_HEADERS(sys/select.h sys/syslimits.h sys/termios.h sys/un.h sys/wait.h stropts.h termios.h wchar.h)
+AC_CHECK_HEADERS(sys/select.h sys/syslimits.h sys/termios.h sys/un.h sys/wait.h stropts.h termios.h util.h wchar.h)
 AC_HEADER_TIOCGWINSZ
 
 # Check for PTY handling functions.
@@ -233,6 +234,7 @@ AC_CHECK_FUNCS([cfmakeraw fork setsid setpgid getpgid getpt grantpt unlockpt pts
 AC_CHECK_FUNC(socket,[have_socket=1],AC_CHECK_LIB(socket,socket,[have_socket=1; LIBS="$LIBS -lsocket"]))
 AC_CHECK_FUNC(socketpair,[have_socketpair=1],AC_CHECK_LIB(socket,socketpair,[have_socketpair=1; LIBS="$LIBS -lsocket"]))
 AC_CHECK_FUNC(recvmsg,[have_recvmsg=1],AC_CHECK_LIB(socket,recvmsg,[have_recvmsg=1; LIBS="$LIBS -lsocket -lnsl"]))
+AC_CHECK_FUNC(openpty,[have_openpty=1],AC_CHECK_LIB(util,openpty,[have_openpty=1; LIBS="$LIBS -lutil"]))
 if test x$have_socket = x1 ; then
 	AC_DEFINE(HAVE_SOCKET,1,[Define if you have the socket function.])
 fi
@@ -242,8 +244,11 @@ fi
 if test x$have_recvmsg = x1 ; then
 	AC_DEFINE(HAVE_RECVMSG,1,[Define if you have the recvmsg function.])
 fi
+if test x$have_openpty = x1 ; then
+	AC_DEFINE(HAVE_OPENPTY,1,[Define if you have the openpty function.])
+fi
 AC_CHECK_FUNC(floor,,AC_CHECK_LIB(m,floor,LIBS=["$LIBS -lm"]))
-AC_CHECK_FUNCS([ceil floor])
+AC_CHECK_FUNCS([ceil floor round])
 
 # Look for tgetent
 
@@ -346,9 +351,9 @@ fi
   
 AM_CONDITIONAL([ENABLE_GLADE_CATALOGUE],[test "$enable_glade_catalogue" = "yes"])
 
-# *************
-# Introspection
-# *************
+# ********
+# Bindings
+# ********
 
 # No automagic please!
 if test -z "$enable_introspection"; then
@@ -356,6 +361,23 @@ if test -z "$enable_introspection"; then
 fi
 
 GOBJECT_INTROSPECTION_CHECK([0.9.0])
+
+# No automagic please!
+if test -z "$enable_vala"; then
+  enable_vala=no
+fi
+m4_ifdef([VAPIGEN_CHECK],[VAPIGEN_CHECK([0.16],[0.18])],[AM_CONDITIONAL([ENABLE_VAPIGEN],[false])])
+
+case "$with_gtk" in
+  3.0) VTE_GIR_VERSION=$VTE_API_VERSION
+       VTE_VAPI_VERSION=$VTE_API_VERSION
+       ;;
+esac
+
+AC_SUBST([VTE_GIR_VERSION])
+AC_SUBST([VTE_GIR_VERSION_U],[AS_TR_SH([$VTE_GIR_VERSION])])
+AC_SUBST([VTE_VAPI_VERSION])
+AC_SUBST([VTE_VAPI_VERSION_U],[AS_TR_SH([$VTE_VAPI_VERSION])])
 
 ################################################################################
 
@@ -370,12 +392,17 @@ AC_SUBST([VTE_MAJOR_VERSION],[version_major])
 AC_SUBST([VTE_MINOR_VERSION],[version_minor])
 AC_SUBST([VTE_MICRO_VERSION],[version_micro])
 
+AC_SUBST([AM_CPPFLAGS],["$AM_CPPFLAGS -DGLIB_DISABLE_DEPRECATION_WARNINGS"])
+AC_SUBST([AM_CFLAGS])
+AC_SUBST([AM_LDFLAGS])
+
 ################################################################################
 
 AC_CONFIG_FILES([
 Makefile
 src/Makefile
 src/vteversion.h
+src/vte.gresource.xml
 termcaps/Makefile
 perf/Makefile
 po/Makefile.in
@@ -387,7 +414,6 @@ glade/Makefile
 ])
 
 AC_CONFIG_FILES([vte-${VTE_API_VERSION}.pc:vte.pc.in],[VTE_API_VERSION=${VTE_API_VERSION}])
-AC_CONFIG_FILES([vte-${VTE_API_VERSION}-uninstalled.pc:vte-uninstalled.pc.in],[VTE_API_VERSION=${VTE_API_VERSION}])
 
 AC_OUTPUT
 
@@ -403,5 +429,6 @@ cat <<EOF | tee -a config.log
 Configuration for libvte-$VTE_API_VERSION $VERSION for gtk+-$GTK_API_VERSION
 	Installing Glade catalogue: $enable_glade_catalogue
 	Debugging: $enable_debug
-	Disallow deprecated features: $enable_deprecation
+	Introspection: $enable_introspection
+        Vala bindings: $enable_vala
 EOF

@@ -61,6 +61,16 @@
 #include <locale.h>
 #endif
 
+#ifndef HAVE_ROUND
+static inline double round(double x) {
+	if(x - floor(x) < 0.5) {
+		return floor(x);
+	} else {
+		return ceil(x);
+	}
+}
+#endif
+
 #ifndef HAVE_WINT_T
 typedef gunichar wint_t;
 #endif
@@ -75,8 +85,7 @@ static void vte_view_emit_copy_primary(VteView *terminal);
 static void vte_view_emit_paste_primary(VteView *terminal);
 static void vte_view_paste_clipboard(VteView *terminal, GtkClipboard *clipboard);
 static void vte_view_set_visibility (VteView *terminal, GdkVisibilityState state);
-static void vte_buffer_set_termcap(VteBuffer *buffer, const char *path,
-				     gboolean reset);
+static void vte_buffer_set_termcap(VteBuffer *buffer);
 static gboolean vte_buffer_io_read(GIOChannel *channel,
 				     GIOCondition condition,
 				     VteBuffer *buffer);
@@ -1630,7 +1639,9 @@ vte_view_match_check_internal_gregex(VteView *terminal,
 
 	_vte_debug_print(VTE_DEBUG_EVENTS,
 			"Checking for gregex match at (%ld,%ld).\n", row, column);
-	*tag = -1;
+	if (tag != NULL) {
+		*tag = -1;
+	}
 	if (start != NULL) {
 		*start = 0;
 	}
@@ -3211,7 +3222,7 @@ vte_buffer_watch_child (VteBuffer *buffer,
  * Gets the user's shell, or %NULL. In the latter case, the
  * system default (usually "/bin/sh") should be used.
  *
- * Returns: (tranfer full) (type filename): a newly allocated string with the
+ * Returns: (transfer full) (type filename): a newly allocated string with the
  *   user's shell, or %NULL
  */
 char *
@@ -3236,7 +3247,7 @@ vte_get_user_shell (void)
  * @envv: (allow-none) (array zero-terminated=1) (element-type filename): a list of environment
  *   variables to be added to the environment before starting the process, or %NULL
  * @spawn_flags: flags from #GSpawnFlags
- * @child_setup: (allow-none) (scope call): function to run in the child just before exec(), or %NULL
+ * @child_setup: (allow-none) (scope call): an extra child setup function to run in the child just before exec(), or %NULL
  * @child_setup_data: user data for @child_setup
  * @child_pid: (out) (allow-none) (transfer full): a location to store the child PID, or %NULL
  * @cancellable: (allow-none): a #GCancellable, or %NULL
@@ -3971,8 +3982,8 @@ out:
 /**
  * vte_buffer_feed:
  * @buffer: a #VteBuffer
- * @data: (allow-none): a string in the buffer's current encoding
- * @length: the length of the string, or <literal>-1</literal>
+ * @data: (allow-none) (array length=length) (element-type guint8): a string in the buffer's current encoding
+ * @length: the length of the string
  *
  * Interprets @data as if it were data received from a child process.  This
  * can either be used to drive the buffer without a child process, or just
@@ -4210,7 +4221,7 @@ vte_buffer_feed_child(VteBuffer *buffer,
 /**
  * vte_buffer_feed_child_binary:
  * @buffer: a #VteBuffer
- * @data: (allow-none) (array zero-terminated=0 lenght=@length) (element-type uint8): data to send to the child
+ * @data: (allow-none) (array zero-terminated=0 length=@length) (element-type uint8): data to send to the child
  * @length: length of @data
  *
  * Sends a block of binary data to the child.
@@ -4760,15 +4771,24 @@ static void
 vte_view_read_modifiers (VteView *terminal,
 			     GdkEvent *event)
 {
+        GdkKeymap *keymap;
 	GdkModifierType modifiers;
 
 	/* Read the modifiers. */
-	if (gdk_event_get_state((GdkEvent*)event, &modifiers)) {
-		GdkKeymap *keymap;
-                keymap = gdk_keymap_get_for_display(gdk_window_get_display(((GdkEventAny*)event)->window));
-                gdk_keymap_add_virtual_modifiers (keymap, &modifiers);
-		terminal->pvt->modifiers = modifiers;
-	}
+	if (!gdk_event_get_state((GdkEvent*)event, &modifiers))
+                return;
+
+        keymap = gdk_keymap_get_for_display(gdk_window_get_display(((GdkEventAny*)event)->window));
+
+        gdk_keymap_add_virtual_modifiers (keymap, &modifiers);
+
+#if 1
+        /* HACK! Treat ALT as META; see bug #663779. */
+        if (modifiers & GDK_MOD1_MASK)
+                modifiers |= VTE_META_MASK;
+#endif
+
+        terminal->pvt->modifiers = modifiers;
 }
 
 /* Read and handle a keypress event. */
@@ -8131,7 +8151,7 @@ vte_buffer_set_emulation(VteBuffer *buffer, const char *emulation)
 	_vte_debug_print(VTE_DEBUG_MISC,
 			"Setting emulation to `%s'...\n", emulation);
 	/* Find and read the right termcap file. */
-	vte_buffer_set_termcap(buffer, NULL, FALSE);
+	vte_buffer_set_termcap(buffer);
 
 	/* Create a table to hold the control sequences. */
 	if (buffer->pvt->matcher != NULL) {
@@ -8238,51 +8258,27 @@ vte_buffer_inline_error_message(VteBuffer *buffer,
 
 /* Set the path to the termcap file we read, and read it in. */
 static void
-vte_buffer_set_termcap(VteBuffer *buffer,
-                       const char *path,
-                       gboolean reset)
+vte_buffer_set_termcap(VteBuffer *buffer)
 {
         GObject *object = G_OBJECT(buffer);
-	struct stat st;
-	char *wpath;
-
-	if (path == NULL) {
-		wpath = g_build_filename(TERMCAPDIR,
-					 buffer->pvt->emulation ?
-					 buffer->pvt->emulation :
-					 vte_get_default_emulation(),
-					 NULL);
-		if (g_stat(wpath, &st) != 0) {
-			g_free(wpath);
-			wpath = g_strdup("/etc/termcap");
-		}
-		path = g_intern_string (wpath);
-		g_free(wpath);
-	} else {
-		path = g_intern_string (path);
-	}
-	if (path == buffer->pvt->termcap_path) {
-		return;
-	}
+        const char *emulation;
 
         g_object_freeze_notify(object);
 
-	buffer->pvt->termcap_path = path;
+        emulation = buffer->pvt->emulation ? buffer->pvt->emulation
+                                            : vte_get_default_emulation();
 
 	_vte_debug_print(VTE_DEBUG_MISC, "Loading termcap `%s'...",
-			buffer->pvt->termcap_path);
+			 emulation);
 	if (buffer->pvt->termcap != NULL) {
 		_vte_termcap_free(buffer->pvt->termcap);
 	}
-	buffer->pvt->termcap = _vte_termcap_new(buffer->pvt->termcap_path);
+	buffer->pvt->termcap = _vte_termcap_new(emulation);
 	_vte_debug_print(VTE_DEBUG_MISC, "\n");
 	if (buffer->pvt->termcap == NULL) {
 		vte_buffer_inline_error_message(buffer,
-				"Failed to load buffer capabilities from '%s'",
-				buffer->pvt->termcap_path);
-	}
-	if (reset) {
-		vte_buffer_set_emulation(buffer, buffer->pvt->emulation);
+				"Failed to load buffer capabilities for '%s'",
+				emulation);
 	}
 
         g_object_thaw_notify(object);
@@ -8843,6 +8839,7 @@ vte_view_realize(GtkWidget *widget)
 				GDK_EXPOSURE_MASK |
 				GDK_VISIBILITY_NOTIFY_MASK |
 				GDK_FOCUS_CHANGE_MASK |
+				GDK_SCROLL_MASK |
 				GDK_BUTTON_PRESS_MASK |
 				GDK_BUTTON_RELEASE_MASK |
 				GDK_POINTER_MOTION_MASK |

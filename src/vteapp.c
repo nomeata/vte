@@ -812,8 +812,6 @@ main(int argc, char **argv)
 	/* Create a window to hold the scrolling shell, and hook its
 	 * delete event to the quit function.. */
 	window = gtk_window_new(GTK_WINDOW_TOPLEVEL);
-	gtk_container_set_resize_mode(GTK_CONTAINER(window),
-				      GTK_RESIZE_IMMEDIATE);
         if (border_width_string) {
                 guint w;
 
@@ -912,7 +910,8 @@ main(int argc, char **argv)
 
 	if (!use_scrolled_window) {
 		/* Create the scrollbar for the widget. */
-		scrollbar = gtk_vscrollbar_new(gtk_scrollable_get_vadjustment(GTK_SCROLLABLE(terminal)));
+		scrollbar = gtk_scrollbar_new(GTK_ORIENTATION_VERTICAL,
+                                              gtk_scrollable_get_vadjustment(GTK_SCROLLABLE(terminal)));
 		gtk_box_pack_start(GTK_BOX(hbox), scrollbar, FALSE, FALSE, 0);
 	}
 

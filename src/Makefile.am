@@ -66,6 +66,7 @@ libvte_@VTE_API_MAJOR_VERSION@_@VTE_API_MINOR_VERSION@_la_SOURCES = \
 	vtepalettecss.h \
 	vtepty.h \
 	vtepty-private.h \
+	vteresources.c \
 	vterowdata.c \
 	vterowdata.h \
 	vteseq.c \
@@ -87,10 +88,10 @@ libvte_@VTE_API_MAJOR_VERSION@_@VTE_API_MINOR_VERSION@_la_SOURCES = \
 
 libvte_@VTE_API_MAJOR_VERSION@_@VTE_API_MINOR_VERSION@_la_CPPFLAGS = \
 	-DG_LOG_DOMAIN=\"Vte-$(VTE_API_VERSION)\" \
+	-DVTE_API_VERSION=\"$(VTE_API_VERSION)\" \
  	-DDATADIR='"$(datadir)"' \
 	-DLIBEXECDIR='"$(libexecdir)"' \
 	-DLOCALEDIR='"$(localedir)"' \
-	-DTERMCAPDIR='"$(pkgdatadir)/termcap-$(VTE_API_VERSION)"' \
 	-DVTE_COMPILATION \
 	$(AM_CPPFLAGS)
 
@@ -107,10 +108,10 @@ libvte_@VTE_API_MAJOR_VERSION@_@VTE_API_MINOR_VERSION@_la_LDFLAGS = \
 # Generated sources
 
 VTESEQ_BUILTSOURCES = vteseq-list.h vteseq-2.c vteseq-n.c
-BUILT_SOURCES = marshal.c marshal.h vtetypebuiltins.c vtetypebuiltins.h $(VTESEQ_BUILTSOURCES)
+BUILT_SOURCES = marshal.c marshal.h vtetypebuiltins.c vtetypebuiltins.h vteresources.c $(VTESEQ_BUILTSOURCES)
 MAINTAINERCLEANFILES = $(VTESEQ_BUILTSOURCES)
 EXTRA_DIST += $(VTESEQ_BUILTSOURCES)
-CLEANFILES = marshal.c marshal.h vtetypebuiltins.c vtetypebuiltins.h stamp-vtetypebuiltins.h
+CLEANFILES = marshal.c marshal.h vtetypebuiltins.c vtetypebuiltins.h stamp-vtetypebuiltins.h vteresources.c
 
 marshal.c: marshal.list
 	$(AM_V_GEN) $(GLIB_GENMARSHAL) --prefix=_vte_marshal --header --body --internal $< > $@
@@ -144,6 +145,8 @@ vteseq-list.h: vteseq-2.gperf vteseq-n.gperf
 	cat $^ | grep -v '^#' | grep '\<VTE_SEQUENCE_HANDLER\>'| sed 's/.*, //' | LANG=C sort -u >> $@.tmp && \
 	mv -f $@.tmp $@
 
+vteresources.c: vte.gresource.xml Makefile $(shell $(GLIB_COMPILE_RESOURCES) --generate-dependencies vte.gresource.xml)
+	$(AM_V_GEN)$(GLIB_COMPILE_RESOURCES) --target $@ --sourcedir . --generate --c-name vte $<
 
 # vte the application
 
@@ -168,15 +171,16 @@ INTROSPECTION_SCANNER_ARGS = --add-include-path=$(srcdir) --warn-all
 INTROSPECTION_COMPILER_ARGS = --includedir=$(srcdir)
 
 if HAVE_INTROSPECTION
+include $(INTROSPECTION_MAKEFILE)
 
-Vte-@VTE_API_VERSION@.gir: libvte_@VTE_API_MAJOR_VERSION@_@VTE_API_MINOR_VERSION@.la
+Vte-@VTE_GIR_VERSION@.gir: libvte-@VTE_API_MAJOR_VERSION@.@VTE_API_MINOR_VERSION@.la
 
-Vte_@VTE_API_VERSION_U@_gir_EXPORT_PACKAGES = vte-$(VTE_API_VERSION)
-Vte_@VTE_API_VERSION_U@_gir_SCANNERFLAGS = --c-include "vte/vte.h"
-Vte_@VTE_API_VERSION_U@_gir_INCLUDES = Pango-1.0 Gdk-$(GTK_API_VERSION) Gtk-$(GTK_API_VERSION)
-Vte_@VTE_API_VERSION_U@_gir_CFLAGS = $(VTE_CFLAGS) -DVTE_COMPILATION -I$(top_srcdir) -I$(top_builddir)
-Vte_@VTE_API_VERSION_U@_gir_LIBS = libvte_@VTE_API_MAJOR_VERSION@_@VTE_API_MINOR_VERSION@.la
-Vte_@VTE_API_VERSION_U@_gir_FILES = \
+Vte_@VTE_GIR_VERSION_U@_gir_EXPORT_PACKAGES = vte-$(VTE_API_VERSION)
+Vte_@VTE_GIR_VERSION_U@_gir_SCANNERFLAGS = --c-include "vte/vte.h"
+Vte_@VTE_GIR_VERSION_U@_gir_INCLUDES = Pango-1.0 Gdk-$(GTK_API_VERSION) Gtk-$(GTK_API_VERSION)
+Vte_@VTE_GIR_VERSION_U@_gir_CFLAGS = $(VTE_CFLAGS) -DVTE_COMPILATION -I$(top_srcdir) -I$(top_builddir)
+Vte_@VTE_GIR_VERSION_U@_gir_LIBS = libvte-@VTE_API_MAJOR_VERSION@.@VTE_API_MINOR_VERSION@.la
+Vte_@VTE_GIR_VERSION_U@_gir_FILES = \
 	vte.c \
 	vte.h \
 	vtepty.h \
@@ -185,7 +189,7 @@ Vte_@VTE_API_VERSION_U@_gir_FILES = \
 	vtetypebuiltins.h \
 	$(NULL)
 
-INTROSPECTION_GIRS += Vte-$(VTE_API_VERSION).gir
+INTROSPECTION_GIRS += Vte-$(VTE_GIR_VERSION).gir
 
 girdir = $(datadir)/gir-1.0
 nodist_gir_DATA = $(INTROSPECTION_GIRS)
@@ -194,6 +198,30 @@ typelibdir = $(libdir)/girepository-1.0
 nodist_typelib_DATA = $(INTROSPECTION_GIRS:.gir=.typelib)
 
 CLEANFILES += $(nodist_gir_DATA) $(nodist_typelib_DATA)
+
+if ENABLE_VAPIGEN
+include $(VAPIGEN_MAKEFILE)
+
+VAPIGEN_VAPIS = Vte-$(VTE_VAPI_VERSION).vapi
+
+Vte-@VTE_VAPI_VERSION@.vapi: Vte-$(VTE_GIR_VERSION).gir
+Vte_@VTE_VAPI_VERSION_U@_vapi_DEPS = \
+	glib-2.0 \
+	gio-2.0 \
+	pango \
+	gdk-$(GTK_API_VERSION) \
+	gtk+-$(GTK_API_VERSION) \
+	$(NULL)
+Vte_@VTE_VAPI_VERSION_U@_vapi_METADATADIRS = $(srcdir)
+Vte_@VTE_VAPI_VERSION_U@_vapi_FILES = Vte-$(VTE_GIR_VERSION).gir
+
+#vapidir = $(datadir)/vala/vapi
+vapidir = $(VAPIGEN_VAPIDIR)
+nodist_vapi_DATA = $(VAPIGEN_VAPIS)
+
+CLEANFILES += $(nodist_vapi_DATA)
+
+endif # ENABLE_VAPIGEN
 
 endif # HAVE_INTROSPECTION
 
@@ -238,14 +266,16 @@ interpret_SOURCES = \
 	trie.h \
 	vteconv.c \
 	vteconv.h \
+	vteresources.c \
 	vtetc.c \
 	vtetc.h \
 	vtetree.c \
 	vtetree.h \
 	interpret.c
 interpret_CPPFLAGS = \
- 	-DINTERPRET_MAIN \
- 	-DTERMCAPDIR='"$(pkgdatadir)/termcap-$(VTE_API_VERSION)"'
+	-DINTERPRET_MAIN \
+	-DVTE_API_VERSION=\"$(VTE_API_VERSION)\" \
+	$(AM_CPPFLAGS)
 interpret_CFLAGS = $(GTK_CFLAGS)
 interpret_LDADD = $(GTK_LIBS)
 
@@ -332,4 +362,3 @@ xticker_SOURCES = xticker.c
 #
 
 -include $(top_srcdir)/git.mk
--include $(INTROSPECTION_MAKEFILE)

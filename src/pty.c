@@ -52,6 +52,9 @@
 #include <termios.h>
 #endif
 #include <unistd.h>
+#ifdef HAVE_UTIL_H
+#include <util.h>
+#endif
 #ifdef HAVE_STROPTS_H
 #include <stropts.h>
 #endif
@@ -77,6 +80,12 @@
 static gboolean _vte_pty_helper_started = FALSE;
 static pid_t _vte_pty_helper_pid = -1;
 static int _vte_pty_helper_tunnel = -1;
+#endif
+
+#if defined(HAVE_PTSNAME_R) || defined(HAVE_PTSNAME) || defined(TIOCGPTN)
+#define HAVE_UNIX98_PTY
+#else
+#undef HAVE_UNIX98_PTY
 #endif
 
 /* Reset the handlers for all known signals to their defaults.  The parent
@@ -190,6 +199,9 @@ typedef struct {
 		const char *name;
 		int fd;
 	} tty;
+
+	GSpawnChildSetupFunc extra_child_setup;
+	gpointer extra_child_setup_data;
 } VtePtyChildSetupData;
 
 /**
@@ -334,6 +346,11 @@ vte_pty_child_setup (VtePty *pty)
         if (priv->term != NULL) {
                 g_setenv("TERM", priv->term, TRUE);
         }
+
+	/* Finally call an extra child setup */
+	if (data->extra_child_setup) {
+		data->extra_child_setup (data->extra_child_setup_data);
+	}
 }
 
 /* TODO: clean up the spawning
@@ -435,6 +452,8 @@ __vte_pty_spawn (VtePty *pty,
                  GPid *child_pid /* out */,
                  GError **error)
 {
+	VtePtyPrivate *priv = pty->priv;
+        VtePtyChildSetupData *data = &priv->child_setup_data;
 	gboolean ret = TRUE;
         char **envp2;
         gint i;
@@ -462,12 +481,14 @@ __vte_pty_spawn (VtePty *pty,
                             directory ? directory : "(none)");
         }
 
+	data->extra_child_setup = child_setup;
+	data->extra_child_setup_data = child_setup_data;
+
         ret = g_spawn_async_with_pipes(directory,
                                        argv, envp2,
                                        spawn_flags,
-                                       child_setup ? child_setup
-                                                   : (GSpawnChildSetupFunc) vte_pty_child_setup,
-                                       child_setup ? child_setup_data : pty,
+                                       (GSpawnChildSetupFunc) vte_pty_child_setup,
+                                       pty,
                                        child_pid,
                                        NULL, NULL, NULL,
                                        &err);
@@ -479,15 +500,17 @@ __vte_pty_spawn (VtePty *pty,
                 ret = g_spawn_async_with_pipes(NULL,
                                                argv, envp2,
                                                spawn_flags,
-                                               child_setup ? child_setup
-                                                           : (GSpawnChildSetupFunc) vte_pty_child_setup,
-                                               child_setup ? child_setup_data : pty,
+                                               (GSpawnChildSetupFunc) vte_pty_child_setup,
+                                               pty,
                                                child_pid,
                                                NULL, NULL, NULL,
                                                &err);
         }
 
         g_strfreev (envp2);
+
+	data->extra_child_setup = NULL;
+	data->extra_child_setup_data = NULL;
 
         if (ret)
                 return TRUE;
@@ -608,6 +631,8 @@ vte_pty_get_size(VtePty *pty,
                 return FALSE;
 	}
 }
+
+#if defined(HAVE_UNIX98_PTY)
 
 /*
  * _vte_pty_ptsname:
@@ -825,6 +850,44 @@ _vte_pty_open_unix98(VtePty *pty,
 
         return TRUE;
 }
+
+#elif defined(HAVE_OPENPTY)
+
+/*
+ * _vte_pty_open_bsd:
+ * @pty: a #VtePty
+ * @error: a location to store a #GError, or %NULL
+ *
+ * Opens new file descriptors to a new PTY master and slave.
+ *
+ * Returns: %TRUE on success, %FALSE on failure with @error filled in
+ */
+static gboolean
+_vte_pty_open_bsd(VtePty *pty,
+                  GError **error)
+{
+	VtePtyPrivate *priv = pty->priv;
+	int parentfd, childfd;
+
+	if (openpty(&parentfd, &childfd, NULL, NULL, NULL) != 0) {
+		int errsv = errno;
+		g_set_error(error, VTE_PTY_ERROR, VTE_PTY_ERROR_PTY98_FAILED,
+			    "%s failed: %s", "openpty", g_strerror(errsv));
+		errno = errsv;
+		return FALSE;
+	}
+
+	priv->pty_fd = parentfd;
+	priv->child_setup_data.mode = TTY_OPEN_BY_FD;
+	priv->child_setup_data.tty.fd = childfd;
+	priv->using_helper = FALSE;
+
+	return TRUE;
+}
+
+#else
+#error Have neither UNIX98 PTY nor BSD openpty!
+#endif /* HAVE_UNIX98_PTY */
 
 #ifdef VTE_USE_GNOME_PTY_HELPER
 #ifdef HAVE_RECVMSG
@@ -1382,7 +1445,7 @@ vte_pty_initable_init (GInitable *initable,
                 }
 
                 g_error_free(err);
-                /* Fall back to unix98 PTY */
+                /* Fall back to unix98 or bsd PTY */
         }
 #else
         if (priv->flags & VTE_PTY_NO_FALLBACK) {
@@ -1392,7 +1455,13 @@ vte_pty_initable_init (GInitable *initable,
         }
 #endif /* VTE_USE_GNOME_PTY_HELPER */
 
+#if defined(HAVE_UNIX98_PTY)
         ret = _vte_pty_open_unix98(pty, error);
+#elif defined(HAVE_OPENPTY)
+        ret = _vte_pty_open_bsd(pty, error);
+#else
+#error Have neither UNIX98 PTY nor BSD openpty!
+#endif
 
   out:
 	_vte_debug_print(VTE_DEBUG_PTY,
@@ -1598,6 +1667,11 @@ vte_pty_error_quark(void)
  * If using g_spawn_async() and friends, you MUST either use
  * vte_pty_child_setup() directly as the child setup function, or call
  * vte_pty_child_setup() from your own child setup function supplied.
+ *
+ * When using vte_terminal_fork_command_full() with a custom child setup
+ * function, vte_pty_child_setup() will be called before the supplied
+ * function; you must not call it again.
+ *
  * Also, you MUST pass the %G_SPAWN_DO_NOT_REAP_CHILD flag.
  *
  * If GNOME PTY Helper is available and
